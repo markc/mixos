@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "annotation"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "action",
  "chrono",
@@ -433,7 +433,7 @@ dependencies = [
 
 [[package]]
 name = "assets"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "blake3",
  "config",
@@ -717,7 +717,7 @@ dependencies = [
 
 [[package]]
 name = "backdrop"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "buildinfo",
  "bus",
@@ -882,7 +882,7 @@ dependencies = [
 
 [[package]]
 name = "blobd"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -990,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "buildinfo"
-version = "0.1.2"
+version = "0.1.3"
 
 [[package]]
 name = "bumpalo"
@@ -1000,7 +1000,7 @@ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
 name = "bus"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "config",
@@ -1194,7 +1194,7 @@ dependencies = [
 
 [[package]]
 name = "ced"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "buildinfo",
  "bus",
@@ -1322,7 +1322,7 @@ dependencies = [
 
 [[package]]
 name = "citizen"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bus",
  "futures",
@@ -1453,7 +1453,7 @@ dependencies = [
 
 [[package]]
 name = "comp-model"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "design",
  "ledger",
@@ -1465,7 +1465,7 @@ dependencies = [
 
 [[package]]
 name = "comp-service"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bus",
  "comp-model",
@@ -1558,7 +1558,7 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "libc",
@@ -1845,7 +1845,7 @@ dependencies = [
 
 [[package]]
 name = "daemon"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -1970,7 +1970,7 @@ dependencies = [
 
 [[package]]
 name = "davproto"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1992,7 +1992,7 @@ dependencies = [
 
 [[package]]
 name = "decor"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "config",
  "cosmic-text",
@@ -2123,7 +2123,7 @@ dependencies = [
 
 [[package]]
 name = "design"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -2212,7 +2212,7 @@ dependencies = [
 
 [[package]]
 name = "dispatcher"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "model",
  "protocols",
@@ -2247,7 +2247,7 @@ dependencies = [
 
 [[package]]
 name = "dns-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "arc-swap",
  "hickory-proto 0.25.2",
@@ -2287,7 +2287,7 @@ dependencies = [
 
 [[package]]
 name = "documents"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "action",
  "blake3",
@@ -2306,7 +2306,7 @@ dependencies = [
 
 [[package]]
 name = "dopus"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "buildinfo",
  "bus",
@@ -2331,7 +2331,7 @@ dependencies = [
 
 [[package]]
 name = "dopus-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "chrono",
  "config",
@@ -2359,7 +2359,7 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
 name = "drivers"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "libpulse-binding",
  "model",
@@ -2468,11 +2468,11 @@ dependencies = [
 
 [[package]]
 name = "edges"
-version = "0.1.2"
+version = "0.1.3"
 
 [[package]]
 name = "edit"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "libc",
  "proptest",
@@ -2507,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "editor"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "design",
  "edit",
@@ -2522,7 +2522,7 @@ dependencies = [
 
 [[package]]
 name = "editor-model"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "blake3",
  "edit",
@@ -2536,7 +2536,7 @@ dependencies = [
 
 [[package]]
 name = "effects"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "slots",
  "smithay",
@@ -2708,7 +2708,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
 name = "email"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "buildinfo",
  "bus",
@@ -2935,7 +2935,7 @@ dependencies = [
 
 [[package]]
 name = "expr"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "serde_json",
 ]
@@ -3009,7 +3009,7 @@ checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
 
 [[package]]
 name = "files"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "blake3",
  "bus",
@@ -3204,7 +3204,7 @@ dependencies = [
 
 [[package]]
 name = "frames"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "dispatcher",
  "effects",
@@ -3699,7 +3699,7 @@ dependencies = [
 
 [[package]]
 name = "graphics"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bindgen 0.71.1",
  "cc",
@@ -3854,7 +3854,7 @@ dependencies = [
 
 [[package]]
 name = "headless"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "comp-model",
  "decor",
@@ -4212,7 +4212,7 @@ dependencies = [
 
 [[package]]
 name = "icons"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "serde",
 ]
@@ -4364,7 +4364,7 @@ checksum = "edcd27d72f2f071c64249075f42e205ff93c9a4c5f6c6da53e79ed9f9832c285"
 
 [[package]]
 name = "indexd"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "buildinfo",
@@ -4468,7 +4468,7 @@ dependencies = [
 
 [[package]]
 name = "inputd-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "inputd-schema",
  "serde_json",
@@ -4476,7 +4476,7 @@ dependencies = [
 
 [[package]]
 name = "inputd-schema"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -4485,7 +4485,7 @@ dependencies = [
 
 [[package]]
 name = "inspector"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bus",
  "citizen",
@@ -4753,7 +4753,7 @@ dependencies = [
 
 [[package]]
 name = "jmap"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -4886,7 +4886,7 @@ dependencies = [
 
 [[package]]
 name = "kms"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "drm-ffi",
  "libc",
@@ -4949,7 +4949,7 @@ dependencies = [
 
 [[package]]
 name = "ledger"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "libc",
  "serde",
@@ -5183,7 +5183,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "logging"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bus",
  "chrono",
@@ -5257,7 +5257,7 @@ checksum = "fc04a4c58212d57930a24bf47d3fa87485264a3a054e9c10e042eb373573ad3c"
 
 [[package]]
 name = "macros"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "libc",
  "paths",
@@ -5327,7 +5327,7 @@ dependencies = [
 
 [[package]]
 name = "maild"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -5390,7 +5390,7 @@ dependencies = [
 
 [[package]]
 name = "maild-auth"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "base64 0.22.1",
  "bus",
@@ -5407,7 +5407,7 @@ dependencies = [
 
 [[package]]
 name = "maild-bayesian"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "async-trait",
  "buildinfo",
@@ -5425,7 +5425,7 @@ dependencies = [
 
 [[package]]
 name = "maild-rules"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "async-trait",
  "buildinfo",
@@ -5447,7 +5447,7 @@ dependencies = [
 
 [[package]]
 name = "maildoc"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bus",
  "proptest",
@@ -5496,7 +5496,7 @@ checksum = "7ebb8d8732c6a6df3d8f032a82911cfc747e00efb95cc46e8d0acd5b5b88570c"
 
 [[package]]
 name = "mds"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "blake3",
  "chrono",
@@ -5550,7 +5550,7 @@ dependencies = [
 
 [[package]]
 name = "mesh"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -5568,7 +5568,7 @@ dependencies = [
 
 [[package]]
 name = "mesh-sign"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -5587,7 +5587,7 @@ dependencies = [
 
 [[package]]
 name = "mesh-trust"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -5698,7 +5698,7 @@ dependencies = [
 
 [[package]]
 name = "mimedb"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "libc",
 ]
@@ -5855,7 +5855,7 @@ dependencies = [
 
 [[package]]
 name = "mixos-mcp"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "buildinfo",
@@ -5880,7 +5880,7 @@ dependencies = [
 
 [[package]]
 name = "mixtrayd"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "bus",
@@ -5895,7 +5895,7 @@ dependencies = [
 
 [[package]]
 name = "model"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bitflags 2.13.1",
  "crossbeam-channel",
@@ -5923,7 +5923,7 @@ dependencies = [
 
 [[package]]
 name = "monitor"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "buildinfo",
  "bus",
@@ -5986,7 +5986,7 @@ dependencies = [
 
 [[package]]
 name = "motion"
-version = "0.1.2"
+version = "0.1.3"
 
 [[package]]
 name = "moxcms"
@@ -6069,7 +6069,7 @@ checksum = "11ec1bc47d34ae756616f387c11fd0595f86f2cc7e6473bde9e3ded30cb902a1"
 
 [[package]]
 name = "native"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "decor",
  "dispatcher",
@@ -6125,7 +6125,7 @@ dependencies = [
 
 [[package]]
 name = "nested"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "decor",
  "dispatcher",
@@ -6859,7 +6859,7 @@ dependencies = [
 
 [[package]]
 name = "outputs"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "dispatcher",
  "model",
@@ -6933,7 +6933,7 @@ checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
 name = "paths"
-version = "0.1.2"
+version = "0.1.3"
 
 [[package]]
 name = "pbkdf2"
@@ -7212,7 +7212,7 @@ dependencies = [
 
 [[package]]
 name = "policy"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "comp-model",
  "inputd-core",
@@ -7222,7 +7222,7 @@ dependencies = [
 
 [[package]]
 name = "policy-host"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "comp-model",
  "config",
@@ -7364,7 +7364,7 @@ dependencies = [
 
 [[package]]
 name = "preferences"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "citizen",
  "design",
@@ -7375,7 +7375,7 @@ dependencies = [
 
 [[package]]
 name = "prefs"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "buildinfo",
  "citizen",
@@ -7465,7 +7465,7 @@ dependencies = [
 
 [[package]]
 name = "props"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "bus",
@@ -7502,7 +7502,7 @@ dependencies = [
 
 [[package]]
 name = "protocols"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bitflags 2.13.1",
  "ledger",
@@ -7962,7 +7962,7 @@ checksum = "03251193000f4bd3b042892be858ee50e8b3719f2b08e5833ac4353724632430"
 
 [[package]]
 name = "recorder"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "dispatcher",
  "graphics",
@@ -8085,7 +8085,7 @@ dependencies = [
 
 [[package]]
 name = "render-gles"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "model",
  "slots",
@@ -8581,7 +8581,7 @@ dependencies = [
 
 [[package]]
 name = "scene"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "expr",
  "indexmap",
@@ -8592,7 +8592,7 @@ dependencies = [
 
 [[package]]
 name = "scene-host"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bus",
  "config",
@@ -8624,7 +8624,7 @@ dependencies = [
 
 [[package]]
 name = "scenegraph"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "dispatcher",
  "effects",
@@ -8686,7 +8686,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "screencopy"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "comp-model",
  "dispatcher",
@@ -8702,7 +8702,7 @@ dependencies = [
 
 [[package]]
 name = "screenshot"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "action",
  "annotation",
@@ -8727,7 +8727,7 @@ dependencies = [
 
 [[package]]
 name = "seat"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "decor",
  "dispatcher",
@@ -9162,7 +9162,7 @@ dependencies = [
 
 [[package]]
 name = "slots"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "libc",
  "model",
@@ -9419,7 +9419,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "strict"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "indexmap",
  "serde",
@@ -9459,7 +9459,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surfaces"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "uuid",
 ]
@@ -9557,7 +9557,7 @@ dependencies = [
 
 [[package]]
 name = "syntax"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "msedit-lsh",
  "msedit-stdext",
@@ -9603,7 +9603,7 @@ dependencies = [
 
 [[package]]
 name = "system"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "buildinfo",
  "bus",
@@ -9733,7 +9733,7 @@ dependencies = [
 
 [[package]]
 name = "term-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "assets",
  "buildinfo",
@@ -9758,7 +9758,7 @@ dependencies = [
 
 [[package]]
 name = "term-render"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "egui",
  "egui-wgpu",
@@ -9778,7 +9778,7 @@ dependencies = [
 
 [[package]]
 name = "test-broker"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -9809,7 +9809,7 @@ dependencies = [
 
 [[package]]
 name = "testkit"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "comp-model",
  "decor",
@@ -9883,7 +9883,7 @@ dependencies = [
 
 [[package]]
 name = "thumbs"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "crc32fast",
  "md-5",
@@ -10204,7 +10204,7 @@ checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
 
 [[package]]
 name = "toolkit"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "action",
  "anyhow",
@@ -10531,7 +10531,7 @@ dependencies = [
 
 [[package]]
 name = "ui"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "dispatcher",
  "egui",
@@ -10806,7 +10806,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vitals"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "design",
  "serde",
@@ -10834,7 +10834,7 @@ dependencies = [
 
 [[package]]
 name = "wallpaper"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "config",
  "image",
@@ -11123,7 +11123,7 @@ dependencies = [
 
 [[package]]
 name = "webd"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -12171,7 +12171,7 @@ dependencies = [
 
 [[package]]
 name = "wlcs"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "libc",
  "model",
@@ -12181,7 +12181,7 @@ dependencies = [
 
 [[package]]
 name = "workshop"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "buildinfo",
  "bus",
@@ -12207,7 +12207,7 @@ dependencies = [
 
 [[package]]
 name = "world"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bitflags 2.13.1",
  "comp-model",
@@ -12253,7 +12253,7 @@ dependencies = [
 
 [[package]]
 name = "x11-wm"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "smithay",
 ]
