@@ -346,9 +346,12 @@ impl PendingResponseTable {
     }
 
     /// Diagnostic census for `noded.info`: every pending entry, and those
-    /// whose responder connection has already closed. A closed responder
-    /// can never answer, so the second figure is what a caller that stays
-    /// connected accumulates. One pass under the read lock, on request only.
+    /// whose responder's outbound channel has closed. That channel closes
+    /// when the responder connection's writer ends, so the second figure
+    /// approximates requests that can no longer be answered: close to
+    /// exact, but a reply already read from a connection whose writer just
+    /// failed can still complete one. One pass under the read lock (cost
+    /// follows the map's capacity), on request only.
     async fn census(&self) -> (usize, usize) {
         let map = self.map.read().await;
         let closed = map.values().filter(|p| p.responder_tx.is_closed()).count();
