@@ -1,0 +1,304 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- idle_profile.mix: what a running daemon costs while it does nothing.
+--
+--   mix idle_profile.mix --pid PID[,PID...] [--seconds N] [--strace] [--json]
+--                        [--budget WAKEUPS_PER_SECOND]
+--
+-- Samples /proc twice, N seconds apart (default 10), and reports for each
+-- process: CPU% of one core, wake-ups a second (voluntary context switches
+-- summed over its threads, the busiest thread named), involuntary switches a
+-- second, resident memory and thread count. It reads /proc only, so it is
+-- safe to point at a production daemon and works for any process.
+--
+-- --strace also attaches `strace -c -f` for the same window and reports
+-- system calls a second and the top calls. Attaching needs ptrace permission
+-- (the same user with kernel.yama.ptrace_scope=0, or root) and slows the
+-- target while attached, so its CPU figure is taken in a separate window
+-- before the trace starts.
+--
+-- --budget N exits 1 when any sampled process exceeds N wake-ups a second.
+--
+--   mix idle_profile.mix --fixture [--no-strace | --strace-only] [--out FILE]
+--                        [--keep DIR] [--test-bin PATH --noded PATH]
+--
+-- Run from the repository root on a build worker. Builds noded in release
+-- and runs the `profile` test of services/noded/tests/efficiency.rs: five
+-- brokers in a signed fixture mesh, the first measured through idle,
+-- registration churn, local and mesh bursts, a flapping peer, requests
+-- nobody answers, and idle again. A second, smaller run under strace
+-- supplies the system-call column (a rate while idle, a count per message
+-- under load; its CPU figures are discarded). Prints one table; --out saves
+-- the rows as JSON so two runs can be compared. NODED_PROFILE_* settings
+-- pass through.
+--
+-- A worker without strace: pass --no-strace --keep DIR there, copy DIR to a
+-- host that has it, and run `--fixture --strace-only --test-bin
+-- DIR/efficiency --noded DIR/noded` on that host. Nothing is built.
+
+fn fail($message)
+  eprint("idle_profile: " .. $message)
+  exit(2)
+end
+
+fn status_field($text, $name)
+  for $line in lines($text)
+    if starts_with($line, $name .. ":") then
+      $parts = re_split(trim(substr($line, len($name) + 1)), "\\s+")
+      return to_number($parts[0])
+    end
+  end
+  return 0
+end
+
+-- utime + stime, in clock ticks, from a stat line. The command name may
+-- hold spaces and brackets, so fields are counted from the last ")".
+fn stat_ticks($text)
+  $at = re_find($text, "\\) ")
+  if len($at) == 0 then return 0 end
+  $tail = substr($text, $at[len($at) - 1].end)
+  $f = split(trim($tail), " ")
+  return to_number($f[11]) + to_number($f[12])
+end
+
+fn snapshot($pid)
+  $root = "/proc/" .. to_string($pid)
+  if not is_file($root .. "/stat") then fail("no such process: " .. to_string($pid)) end
+  $threads = {}
+  for $dir in glob($root .. "/task/*")
+    $tid = basename($dir)
+    -- A thread may exit between the listing and the read.
+    if is_file($dir .. "/status") then
+      $status = read_file($dir .. "/status")
+      $threads[$tid] = {
+        name: trim(read_file($dir .. "/comm")),
+        voluntary: status_field($status, "voluntary_ctxt_switches"),
+        involuntary: status_field($status, "nonvoluntary_ctxt_switches"),
+        ticks: stat_ticks(read_file($dir .. "/stat"))
+      }
+    end
+  end
+  $status = read_file($root .. "/status")
+  return {
+    at: monotonic(),
+    ticks: stat_ticks(read_file($root .. "/stat")),
+    rss_kb: status_field($status, "VmRSS"),
+    threads: $threads
+  }
+end
+
+fn compare($pid, $before, $after, $hz)
+  $elapsed = $after.at - $before.at
+  $voluntary = 0
+  $involuntary = 0
+  $busiest = {name: "", rate: 0}
+  for $tid in keys($after.threads)
+    $now = $after.threads[$tid]
+    $then = $before.threads[$tid] ?? {voluntary: 0, involuntary: 0}
+    $delta = $now.voluntary - $then.voluntary
+    $voluntary = $voluntary + $delta
+    $involuntary = $involuntary + $now.involuntary - $then.involuntary
+    if $delta / $elapsed > $busiest.rate then
+      $busiest = {name: $now.name, rate: $delta / $elapsed}
+    end
+  end
+  return {
+    pid: $pid,
+    command: trim(replace(read_file("/proc/" .. to_string($pid) .. "/cmdline"), chr(0), " ")),
+    seconds: $elapsed,
+    cpu_percent: ($after.ticks - $before.ticks) / $hz / $elapsed * 100,
+    wakeups_per_s: $voluntary / $elapsed,
+    involuntary_per_s: $involuntary / $elapsed,
+    busiest_thread: $busiest.name,
+    busiest_wakeups_per_s: $busiest.rate,
+    rss_kb: $after.rss_kb,
+    threads: len(keys($after.threads))
+  }
+end
+
+-- `strace -c` summary rows: % time, seconds, usecs/call, calls, [errors,] name.
+fn strace_window($pid, $seconds)
+  $out = "/tmp/idle-profile-" .. to_string(pid()) .. "-" .. to_string($pid) .. ".strace"
+  $started = monotonic()
+  $r = run_argv(["strace", "-c", "-f", "-p", to_string($pid), "-o", $out], {timeout: $seconds, grace: 5})
+  $elapsed = monotonic() - $started
+  if not is_file($out) then
+    return {error: trim($r.stderr)}
+  end
+  $text = read_file($out)
+  remove($out)
+  $calls = []
+  $total = 0
+  for $line in lines($text)
+    $f = re_split(trim($line), "\\s+")
+    if len($f) >= 5 and re_match($f[0], "^[0-9.]+$") and re_match($f[3], "^[0-9]+$") and $f[len($f) - 1] != "total" then
+      push($calls, {name: $f[len($f) - 1], calls: to_number($f[3])})
+      $total = $total + to_number($f[3])
+    end
+  end
+  if $total == 0 and trim($r.stderr) != "" and len($calls) == 0 and not contains($text, "total") then
+    return {error: trim($r.stderr)}
+  end
+  $top = slice(reverse(sort_by($calls, fn($c) = $c.calls)), 0, 5)
+  return {
+    syscalls_per_s: $total / $elapsed,
+    top: map($top, fn($c) = $c.name .. " " .. to_string($c.calls))
+  }
+end
+
+-- One `profile` run; returns {rows, test_bin} or nil. A traced broker runs
+-- about a hundred times slower, so that run uses a tenth of each workload
+-- unless the caller set one.
+fn fixture_run($g, $strace)
+  $env = {}
+  if $strace then
+    $env.NODED_PROFILE_STRACE = "1"
+    for $pair in [["CALLS", "20000"], ["REGISTRATIONS", "200"], ["UNANSWERED", "5000"], ["IDLE_SECS", "10"]]
+      $name = "NODED_PROFILE_" .. $pair[0]
+      if env($name) == "" then $env[$name] = $pair[1] end
+    end
+  end
+  $test_args = ["--ignored", "--nocapture", "--exact", "profile"]
+  if $g.opts["test-bin"] != nil then
+    $env.NODED_PROFILE_BIN = $g.opts.noded
+    $argv = concat([$g.opts["test-bin"]], $test_args)
+  else
+    $argv = concat(["cargo", "test", "--locked", "--release", "-p", "noded", "--test", "efficiency", "--"], $test_args)
+  end
+  $r = run_argv($argv, {timeout: 3600, env: $env, stderr: "stdout", max_output: 64000000})
+  $rows = []
+  $test_bin = nil
+  for $line in lines($r.stdout)
+    -- The test harness may print its own text before the marker on a line.
+    $at = re_find($line, "PROFILE \\{")
+    if len($at) > 0 then push($rows, json_parse(substr($line, $at[0].start + 8))) end
+    $ran = re_find($line, "Running tests/efficiency\\.rs \\(([^)]+)\\)")
+    if len($ran) > 0 then $test_bin = $ran[0].groups[0] end
+  end
+  if not $r.ok or len($rows) == 0 then
+    print($r.stdout)
+    return nil
+  end
+  return {rows: $rows, test_bin: $test_bin}
+end
+
+fn cell($value, $pattern)
+  if $value == nil then return "-" end
+  return fmt($pattern, $value)
+end
+
+-- System calls: a rate while idle, a count per message under load.
+fn syscall_cell($row)
+  if $row.syscalls == nil then return "-" end
+  if $row.messages > 0 then return fmt("%.1f/msg", $row.syscalls / $row.messages) end
+  return fmt("%.1f/s", $row.syscalls_per_s)
+end
+
+fn fixture($g)
+  $prebuilt = $g.opts["test-bin"] != nil
+  if $prebuilt and $g.opts.noded == nil then fail("--test-bin needs --noded PATH") end
+  $rows = nil
+  if not $g.opts["strace-only"] then
+    $plain = fixture_run($g, false)
+    if $plain == nil then fail("the profile run failed") end
+    $rows = $plain.rows
+    if $g.opts.keep != nil then
+      if $plain.test_bin == nil then fail("--keep: cargo did not name the test binary") end
+      mkdir($g.opts.keep)
+      copy($plain.test_bin, $g.opts.keep .. "/efficiency")
+      copy("target/release/noded", $g.opts.keep .. "/noded")
+      print("kept: " .. $g.opts.keep .. "/efficiency and " .. $g.opts.keep .. "/noded")
+    end
+  end
+  if not $g.opts["no-strace"] then
+    $traced = fixture_run($g, true)
+    if $traced == nil then
+      eprint("idle_profile: the strace run failed; system-call columns are empty")
+    elif $rows == nil then
+      -- Only the system-call columns of a traced run mean anything.
+      $rows = map($traced.rows, fn($t) = {phase: $t.phase, messages: $t.messages, syscalls: $t.syscalls,
+        syscalls_per_s: $t.syscalls_per_s, top_syscalls: $t.top_syscalls})
+    else
+      for $i = 0 to len($rows) - 1
+        for $t in $traced.rows
+          if $t.phase == $rows[$i].phase then
+            $rows[$i].syscalls = $t.syscalls
+            $rows[$i].syscalls_per_s = $t.syscalls_per_s
+            $rows[$i].syscall_messages = $t.messages
+            $rows[$i].top_syscalls = $t.top_syscalls
+          end
+        end
+      end
+    end
+  end
+  if $rows == nil then fail("nothing was measured") end
+  $layout = "%-13s %7s %7s %8s %10s %11s %8s %7s %8s %7s"
+  print(fmt($layout, "phase", "seconds", "cpu %", "cpu ms", "wake-ups/s", "syscalls", "rss kB", "threads",
+    "messages", "us/msg"))
+  for $row in $rows
+    $calls = $row
+    if $row.syscall_messages != nil then $calls = merge($row, {messages: $row.syscall_messages}) end
+    print(fmt($layout, $row.phase, cell($row.seconds, "%.1f"), cell($row.cpu_percent, "%.2f"),
+      cell($row.cpu_ms, "%.0f"), cell($row.wakeups_per_s, "%.1f"), syscall_cell($calls),
+      cell($row.rss_kb, "%d"), cell($row.threads, "%d"), cell($row.messages, "%d"),
+      cell($row.cpu_us_per_message, "%.1f")))
+  end
+  for $row in $rows
+    if $row.top_syscalls != nil then
+      print(fmt("%-13s top syscalls: %s", $row.phase, join($row.top_syscalls, ", ")))
+    end
+  end
+  for $row in $rows print("ROW " .. json_encode($row)) end
+  if $g.opts.out != nil then write_file($g.opts.out, json_encode($rows, true) .. chr(10)) end
+end
+
+$g = getopt(args(), {pid: {arg: true}, seconds: {arg: true}, strace: {}, json: {}, budget: {arg: true},
+  fixture: {}, "no-strace": {}, "strace-only": {}, out: {arg: true}, "test-bin": {arg: true},
+  noded: {arg: true}, keep: {arg: true}})
+if len($g.errors) > 0 then fail(join($g.errors, "; ")) end
+if $g.opts.fixture then
+  fixture($g)
+  exit(0)
+end
+if $g.opts.pid == nil then fail("--pid PID[,PID...] or --fixture is required") end
+$seconds = to_number($g.opts.seconds ?? "10")
+if $seconds < 1 then fail("--seconds must be at least 1") end
+$pids = map(split($g.opts.pid, ","), fn($p) = to_number(trim($p)))
+$hz = to_number(trim(run_argv_must(["getconf", "CLK_TCK"])))
+
+$before = {}
+for $p in $pids $before[to_string($p)] = snapshot($p) end
+sleep($seconds)
+$rows = []
+for $p in $pids
+  push($rows, compare($p, $before[to_string($p)], snapshot($p), $hz))
+end
+if $g.opts.strace then
+  for $i = 0 to len($rows) - 1
+    $rows[$i].strace = strace_window($rows[$i].pid, $seconds)
+  end
+end
+
+$over = false
+for $row in $rows
+  if $g.opts.json then
+    print(json_encode($row))
+  else
+    print(fmt("pid %d  %s", $row.pid, $row.command))
+    print(fmt("  cpu %.2f%%  wake-ups %.1f/s (busiest %s %.1f/s)  involuntary %.1f/s  rss %d kB  threads %d  window %.1fs",
+      $row.cpu_percent, $row.wakeups_per_s, $row.busiest_thread, $row.busiest_wakeups_per_s,
+      $row.involuntary_per_s, $row.rss_kb, $row.threads, $row.seconds))
+    if $row.strace != nil then
+      if $row.strace.error != nil then
+        print("  strace unavailable: " .. $row.strace.error)
+      else
+        print(fmt("  syscalls %.1f/s  top: %s", $row.strace.syscalls_per_s, join($row.strace.top, ", ")))
+      end
+    end
+  end
+  if $g.opts.budget != nil and $row.wakeups_per_s > to_number($g.opts.budget) then
+    $over = true
+    eprint(fmt("idle_profile: pid %d makes %.1f wake-ups/s, over the budget of %s", $row.pid, $row.wakeups_per_s, $g.opts.budget))
+  end
+end
+if $over then exit(1) end

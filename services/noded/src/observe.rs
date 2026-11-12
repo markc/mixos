@@ -16,7 +16,7 @@ use crate::protection::TrafficClass;
 use bus::wire::{BusMessage, BusTarget};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 
 pub(crate) const DEFAULT_CAPACITY: usize = 1024;
 pub(crate) const MIN_CAPACITY: usize = 64;
@@ -29,6 +29,8 @@ const MAX_COMMAND_FILTERS: usize = 32;
 const MAX_COMMAND_BYTES: usize = 128;
 const MAX_SERVICE_FILTERS: usize = 64;
 const MAX_SERVICE_BYTES: usize = 128;
+/// Drainer cadence while events are queued. With nothing queued the drainer
+/// is parked and this timer does not exist.
 const DRAIN_INTERVAL: Duration = Duration::from_millis(2);
 /// Per-subscription work budget on each 2 ms drainer wake. This permits
 /// batching without allowing one subscriber to monopolise the broker task.
@@ -265,6 +267,12 @@ pub(crate) struct ObserveManager {
     next_id: Arc<AtomicU64>,
     active_subscriptions: Arc<AtomicUsize>,
     inner: Arc<Mutex<Inner>>,
+    /// Wakes the parked drainer when `observe` queues an event. Shared by
+    /// every class-scoped clone, like the queues it guards.
+    queued: Arc<Notify>,
+    /// Drain passes the spawned drainer has made.
+    #[cfg(test)]
+    drain_passes: Arc<AtomicU64>,
     class: TrafficClass,
 }
 
@@ -274,6 +282,9 @@ impl ObserveManager {
             next_id: Arc::new(AtomicU64::new(1)),
             active_subscriptions: Arc::new(AtomicUsize::new(0)),
             inner: Arc::new(Mutex::new(Inner::default())),
+            queued: Arc::new(Notify::new()),
+            #[cfg(test)]
+            drain_passes: Arc::new(AtomicU64::new(0)),
             class: TrafficClass::Legacy,
         })
     }
@@ -293,14 +304,36 @@ impl ObserveManager {
         self.class
     }
 
+    /// Deliver queued events to their subscribers.
+    ///
+    /// The drainer is parked until `observe` queues something, so a broker
+    /// with no observers, or with observers and no matching traffic, makes no
+    /// wake-ups here. While any ring holds events it drains every
+    /// [`DRAIN_INTERVAL`], starting one interval after the first event: a
+    /// burst is still one wake, and a subscriber is still limited to
+    /// [`MAX_DRAIN_BYTES_PER_TICK`] in each interval. A full subscriber
+    /// channel is retried at that cadence until it empties or closes.
+    ///
+    /// `Notify` keeps one permit, so an event queued between the last drain
+    /// and the next `notified().await` is not lost.
     pub(crate) fn spawn_drainer(self: &Arc<Self>) {
         let manager = Arc::clone(self);
         tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(DRAIN_INTERVAL);
-            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
-                ticker.tick().await;
-                manager.drain_once();
+                manager.queued.notified().await;
+                let mut ticker = tokio::time::interval_at(
+                    tokio::time::Instant::now() + DRAIN_INTERVAL,
+                    DRAIN_INTERVAL,
+                );
+                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    ticker.tick().await;
+                    #[cfg(test)]
+                    manager.drain_passes.fetch_add(1, Ordering::Relaxed);
+                    if !manager.drain_once() {
+                        break;
+                    }
+                }
             }
         });
     }
@@ -475,39 +508,50 @@ impl ObserveManager {
             })
             .collect();
 
-        let mut inner = lock(&self.inner);
-        for (id, queued) in prepared {
-            let Some(subscription) = inner
-                .subscriptions
-                .iter_mut()
-                .find(|subscription| subscription.id == id)
-            else {
-                continue;
-            };
-            let accounted_bytes = queued.accounted_bytes;
-            if accounted_bytes > BYTE_LIMIT {
-                subscription.dropped_since_delivery =
-                    subscription.dropped_since_delivery.saturating_add(1);
-                continue;
-            }
-            while subscription.queue.len() >= subscription.capacity
-                || subscription.queued_bytes.saturating_add(accounted_bytes) > BYTE_LIMIT
-            {
-                let Some(evicted) = subscription.queue.pop_front() else {
-                    break;
+        let mut wake_drainer = false;
+        {
+            let mut inner = lock(&self.inner);
+            for (id, queued) in prepared {
+                let Some(subscription) = inner
+                    .subscriptions
+                    .iter_mut()
+                    .find(|subscription| subscription.id == id)
+                else {
+                    continue;
                 };
-                subscription.queued_bytes = subscription
-                    .queued_bytes
-                    .saturating_sub(evicted.accounted_bytes);
-                subscription.dropped_since_delivery =
-                    subscription.dropped_since_delivery.saturating_add(1);
+                let accounted_bytes = queued.accounted_bytes;
+                if accounted_bytes > BYTE_LIMIT {
+                    subscription.dropped_since_delivery =
+                        subscription.dropped_since_delivery.saturating_add(1);
+                    continue;
+                }
+                while subscription.queue.len() >= subscription.capacity
+                    || subscription.queued_bytes.saturating_add(accounted_bytes) > BYTE_LIMIT
+                {
+                    let Some(evicted) = subscription.queue.pop_front() else {
+                        break;
+                    };
+                    subscription.queued_bytes = subscription
+                        .queued_bytes
+                        .saturating_sub(evicted.accounted_bytes);
+                    subscription.dropped_since_delivery =
+                        subscription.dropped_since_delivery.saturating_add(1);
+                }
+                subscription.queued_bytes =
+                    subscription.queued_bytes.saturating_add(accounted_bytes);
+                subscription.queue.push_back(queued);
+                wake_drainer = true;
             }
-            subscription.queued_bytes = subscription.queued_bytes.saturating_add(accounted_bytes);
-            subscription.queue.push_back(queued);
+        }
+        // After the mutex is released: the drainer's first act is to take it.
+        if wake_drainer {
+            self.queued.notify_one();
         }
     }
 
-    fn drain_once(&self) {
+    /// One delivery pass. Returns whether any ring still holds events, which
+    /// is what keeps the drainer's timer alive.
+    fn drain_once(&self) -> bool {
         struct DrainBatch {
             id: String,
             dropped_count: u64,
@@ -612,6 +656,10 @@ impl ObserveManager {
             inner.subscriptions.remove(index);
             self.active_subscriptions.fetch_sub(1, Ordering::Release);
         }
+        inner
+            .subscriptions
+            .iter()
+            .any(|subscription| !subscription.queue.is_empty())
     }
 
     #[cfg(test)]
@@ -1186,6 +1234,72 @@ mod tests {
 
         let delivered = std::iter::from_fn(|| rx.try_recv().ok()).count();
         assert_eq!(delivered, 10, "drainer regressed to one event per wake");
+    }
+
+    /// The idle-spin regression: the drainer used to tick every 2 ms for the
+    /// life of the broker, 500 wake-ups a second with nothing to deliver.
+    #[tokio::test(start_paused = true)]
+    async fn drainer_is_parked_until_an_event_is_queued() {
+        let manager = manager();
+        manager.spawn_drainer();
+        let passes = || manager.drain_passes.load(Ordering::Relaxed);
+
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert_eq!(passes(), 0, "no observers: the drainer must not run");
+
+        let (tx, mut rx) = mpsc::channel(32);
+        start(&manager, &tx, r#"{"filter":{"commands":["musicd.*"]}}"#);
+        let _ack = rx.try_recv().unwrap();
+        observe_command(&manager, "maild.unmatched");
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert_eq!(passes(), 0, "an observer with nothing queued costs nothing");
+
+        // A burst is delivered one interval later, in one pass.
+        for index in 0..10 {
+            observe_command(&manager, &format!("musicd.event.{index}"));
+        }
+        assert!(
+            rx.try_recv().is_err(),
+            "delivery waits for the batch window"
+        );
+        tokio::time::sleep(DRAIN_INTERVAL + Duration::from_millis(1)).await;
+        assert_eq!(std::iter::from_fn(|| rx.try_recv().ok()).count(), 10);
+        assert_eq!(passes(), 1);
+
+        // Emptied rings park the drainer again; the next event restarts it.
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert!(passes() <= 2, "drained rings must stop the timer");
+        let parked_at = passes();
+        observe_command(&manager, "musicd.late");
+        tokio::time::sleep(DRAIN_INTERVAL + Duration::from_millis(1)).await;
+        assert!(rx.try_recv().is_ok());
+        assert_eq!(passes(), parked_at + 1);
+    }
+
+    /// A subscriber that stops reading keeps its events queued; the drainer
+    /// retries at its cadence and delivers when the channel has room again.
+    #[tokio::test(start_paused = true)]
+    async fn drainer_retries_a_full_subscriber_channel() {
+        let manager = manager();
+        manager.spawn_drainer();
+        let (tx, mut rx) = mpsc::channel(2);
+        start(&manager, &tx, "{}");
+        let _ack = rx.try_recv().unwrap();
+        for index in 0..5 {
+            observe_command(&manager, &format!("musicd.event.{index}"));
+        }
+        tokio::time::sleep(DRAIN_INTERVAL * 4).await;
+        assert_eq!(std::iter::from_fn(|| rx.try_recv().ok()).count(), 2);
+        tokio::time::sleep(DRAIN_INTERVAL * 4).await;
+        assert_eq!(std::iter::from_fn(|| rx.try_recv().ok()).count(), 2);
+        tokio::time::sleep(DRAIN_INTERVAL * 4).await;
+        assert_eq!(std::iter::from_fn(|| rx.try_recv().ok()).count(), 1);
+        let settled = manager.drain_passes.load(Ordering::Relaxed);
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert!(
+            manager.drain_passes.load(Ordering::Relaxed) <= settled + 1,
+            "delivered backlog must park the drainer"
+        );
     }
 
     #[test]
