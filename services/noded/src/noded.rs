@@ -344,6 +344,16 @@ impl PendingResponseTable {
             })
             .collect()
     }
+
+    /// Diagnostic census for `noded.info`: every pending entry, and those
+    /// whose responder connection has already closed. A closed responder
+    /// can never answer, so the second figure is what a caller that stays
+    /// connected accumulates. One pass under the read lock, on request only.
+    async fn census(&self) -> (usize, usize) {
+        let map = self.map.read().await;
+        let closed = map.values().filter(|p| p.responder_tx.is_closed()).count();
+        (map.len(), closed)
+    }
 }
 
 #[derive(Clone)]
@@ -4288,6 +4298,11 @@ async fn handle_noded_command(
                 schema_version: bus::SCHEMA_VERSION,
                 meta: Default::default(),
             };
+            // Additive diagnostics in the existing `meta` extension map.
+            let (pending, responder_closed) = state.pending_responses.census().await;
+            let mut meta = serde_json::Map::new();
+            meta.insert("pending_responses".into(), pending.into());
+            meta.insert("pending_responder_closed".into(), responder_closed.into());
             let info = bus::NodeInfo {
                 node: state.node_name.clone(),
                 // `bind` is `<host>:<port>`; the host is the WG IP. Parse
@@ -4305,7 +4320,7 @@ async fn handle_noded_command(
                 uptime_s: Some(state.started.elapsed().as_secs()),
                 service_count: Some(service_count),
                 schema_version: bus::SCHEMA_VERSION,
-                meta: Default::default(),
+                meta,
             };
             let body = serde_json::to_string(&info).unwrap_or_else(|_| "{}".to_string());
 
@@ -5307,6 +5322,32 @@ mod tests {
 
         // Table is now empty; a re-drain of a drained channel is a no-op.
         assert!(table.drain_for_channel(&tx_a).await.is_empty());
+    }
+
+    /// `census` counts every entry and, separately, those whose responder
+    /// has gone, without changing the table.
+    #[tokio::test]
+    async fn census_counts_entries_with_a_closed_responder() {
+        use super::PendingResponseTable;
+        use bus::wire::BusMessage;
+        use tokio::sync::mpsc;
+
+        let table = PendingResponseTable::new();
+        let (caller, _caller_rx) = mpsc::channel::<String>(4);
+        let (gone, gone_rx) = mpsc::channel::<String>(4);
+        let (live, _live_rx) = mpsc::channel::<String>(4);
+        for (index, responder) in [&gone, &gone, &live].into_iter().enumerate() {
+            let mut m = BusMessage::new();
+            m.set("id", &format!("c{index}"));
+            table
+                .register(&mut m, &caller, Some("caller"), responder)
+                .await
+                .unwrap();
+        }
+        assert_eq!(table.census().await, (3, 0));
+        drop(gone_rx);
+        assert_eq!(table.census().await, (3, 2));
+        assert_eq!(table.census().await, (3, 2));
     }
 
     /// SPEC 13 §9a B1 self-check (2-c-1a): a `0.0.0.0`/`::`/unparseable bind is
